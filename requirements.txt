@@ -1,0 +1,15 @@
+# Required (the built-in engine and the whole harness run on just this):
+pydantic>=2.5
+
+# For --engine guardrails / `native` command, and the dashboard's guardrails
+# engine. Pinned to the version the harness + findings were verified against
+# (engines.py targets this exact API: guard.parse / .validation_passed /
+# .reask.fail_results). If this fails to install, the dashboard still runs on
+# the builtin engine.
+guardrails-ai==0.10.2
+
+# Local visual dashboard (app.py).
+streamlit>=1.30
+
+# Optional: only needed to evaluate REAL (non-mock) models via LiteLLM.
+# litellm>=1.40

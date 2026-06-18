@@ -1,0 +1,8 @@
+# Local, offline demo defaults. Safe to delete — the app runs without this.
+[server]
+headless = true
+address = "localhost"
+port = 8501
+
+[browser]
+gatherUsageStats = false
