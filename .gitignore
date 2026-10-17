@@ -15,3 +15,6 @@ __pycache__/
 # OS / editor cruft
 .DS_Store
 Thumbs.db
+
+# Editor settings
+.vscode/

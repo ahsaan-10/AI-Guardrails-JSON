@@ -1,73 +1,100 @@
 # AI Guardrails for Structured JSON
 
-**An evaluation harness and Streamlit dashboard for checking whether model outputs match a schema—and whether their values are correct.**
+**An evaluation harness that measures whether LLM outputs match a schema, and whether the values inside are actually correct.**
 
-[Demo walkthrough](DEMO.md) · [Detailed methodology](TECHNICAL_NOTES.md)
+[![tests](https://github.com/ahsaan-10/AI-Guardrails-JSON/actions/workflows/tests.yml/badge.svg)](https://github.com/ahsaan-10/AI-Guardrails-JSON/actions/workflows/tests.yml)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Pydantic](https://img.shields.io/badge/Pydantic-v2-E92063?logo=pydantic&logoColor=white)
+![Guardrails AI](https://img.shields.io/badge/Guardrails%20AI-0.10.2-4B32C3)
+![Streamlit](https://img.shields.io/badge/Streamlit-dashboard-FF4B4B?logo=streamlit&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-## The problem it addresses
+[Demo walkthrough](DEMO.md) · [Methodology and metrics](TECHNICAL_NOTES.md)
 
-An automation can fail because an LLM returns invalid JSON, misses a required field, or supplies a valid-looking but wrong value. This project makes those differences visible and measures what retries can repair.
+---
 
-## What it demonstrates
+## Why this matters
 
-- Pydantic schemas for incident and bug reports.
-- Guardrails AI validation compared with a strict Pydantic baseline.
-- Bounded reask loops after invalid outputs.
-- Failure categories, first-pass and final validation rates, field accuracy, and correctness.
-- CSV output and a Streamlit interface for inspecting results.
-- Deterministic simulated model profiles for offline demos; optional real-model access through LiteLLM.
+Automations that consume LLM output usually check one thing: *is it valid JSON that fits the schema?* That catches broken output, but not output that is **well-formed and wrong**. This project measures both, separately, and shows how far automatic retries can repair a model's mistakes.
 
-## Run locally
+## Key result
+
+Offline run with the built-in validator, 1 retry allowed, 14 cases per model (`python run_eval.py eval --engine builtin --models strong,medium,weak`):
+
+| Simulated model | Schema-valid on first try | Schema-valid after retry | Field accuracy | **Fully correct** |
+| --- | ---: | ---: | ---: | ---: |
+| Strong | 100.0% | 100.0% | 96.8% | **85.7%** |
+| Medium | 57.1% | 100.0% | 100.0% | **100.0%** |
+| Weak | 28.6% | 100.0% | 96.8% | **85.7%** |
+
+**Takeaway:** retries fixed every structural failure, but the "strong" model passed validation 100% of the time while still being wrong in about 1 in 7 cases. Schema validation alone is not quality control.
+
+> The three models are **deterministic simulations** designed to produce each failure type on purpose, so the results are reproducible offline. They are not a benchmark of commercial LLMs. Real models can be evaluated through LiteLLM (see below).
+
+## What it does
+
+- **Schemas:** Pydantic models for incident reports and bug reports, with enums, numeric constraints, and `extra="forbid"` to catch hallucinated fields.
+- **Two validators:** Guardrails AI compared against a strict Pydantic baseline.
+- **Bounded retries:** failed outputs are sent back to the model with the error, up to a set limit.
+- **Failure taxonomy:** each first attempt is classified as `invalid_json`, `not_object`, `missing_field`, `extra_field`, `wrong_type`, `semantic_error`, or `valid`.
+- **Correctness checks:** field-level accuracy against ground truth, separate from schema validity.
+- **Dashboard and CSV:** a Streamlit app for exploring runs, plus per-case CSV export.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Task prompt<br/>+ ground truth] --> B[Model<br/>simulated or real]
+    B --> C{Validator<br/>Guardrails / Pydantic}
+    C -- invalid --> D[Re-ask with error]
+    D --> B
+    C -- valid --> E[Correctness check<br/>vs ground truth]
+    B -. first attempt .-> F[Failure classifier]
+    E --> G[Metrics, CSV,<br/>Streamlit dashboard]
+    F --> G
+```
+
+## Getting started
 
 ```bash
 git clone https://github.com/ahsaan-10/AI-Guardrails-JSON.git
 cd AI-Guardrails-JSON
 python -m venv .venv
+# Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-Activate the environment (`.venv\Scripts\Activate.ps1` on Windows, `source .venv/bin/activate` on macOS/Linux), then:
+| Goal | Command |
+| --- | --- |
+| Open the dashboard | `python -m streamlit run app.py` |
+| Quick evaluation (only needs `pydantic`) | `python run_eval.py eval --engine builtin --models strong,medium,weak` |
+| Evaluate with Guardrails AI | `python run_eval.py eval --engine guardrails --models strong,medium,weak` |
+| Step-by-step demo | `python run_eval.py demo --engine guardrails` |
+| Run the tests | `pip install pytest && pytest -q tests` |
 
-```bash
-python -m pip install -r requirements.txt
-python -m streamlit run app.py
-```
+To evaluate a real model, install `litellm`, set your provider's API key, and pass the model name. Use `--reps` to repeat runs, since a single response is not a stable measurement.
 
-The repository records compatibility with Python 3.12 and pins Guardrails AI to `0.10.2`. For a minimal CLI evaluation that does not install Guardrails or Streamlit:
-
-```bash
-python -m pip install pydantic
-python run_eval.py eval --engine builtin --models strong,medium,weak
-```
-
-## Run an evaluation or demo
-
-```bash
-python run_eval.py eval --engine guardrails --models strong,medium,weak
-python run_eval.py demo --engine guardrails
-python run_eval.py eval --engine builtin --models strong,medium,weak --csv results_builtin.csv
-```
-
-Real-model evaluations additionally require `litellm` and the chosen provider's key. Use `--reps` to collect repeated observations rather than treating one response as a stable benchmark.
-
-## How to interpret results
-
-The bundled strong, medium, and weak profiles are **simulated models**, not a comparison of commercial LLMs. Schema validation tests structure; semantic correctness is checked separately against task ground truth. Passing a schema after a retry does not prove that the answer is correct.
-
-See [TECHNICAL_NOTES.md](TECHNICAL_NOTES.md) for the original recorded results, metric definitions, and validator differences. Those recorded runs were not rerun during this documentation update.
-
-## Repository map
+## Project structure
 
 ```text
-app.py            Streamlit dashboard
-run_eval.py       Evaluation and demo CLI
-schemas.py        Task schemas, ground truth, and test cases
-engines.py        Guardrails and Pydantic validators
-models.py         Mock and optional real-model adapters
-harness.py        Retry loop, aggregation, and CSV export
-failure_modes.py  Failure classification
-DEMO.md           Guided demonstration
+AI-Guardrails-JSON/
+├── app.py              # Streamlit dashboard
+├── run_eval.py         # CLI: eval and demo commands
+├── harness.py          # Retry loop, metrics aggregation, CSV export
+├── engines.py          # Guardrails AI and Pydantic validators
+├── failure_modes.py    # First-attempt failure classifier
+├── models.py           # Simulated models and LiteLLM adapter
+├── schemas.py          # Schemas, test cases, and ground truth
+├── tests/              # Unit and end-to-end tests (run in CI)
+├── results*.csv        # Recorded evaluation outputs
+├── DEMO.md             # Guided demonstration
+└── TECHNICAL_NOTES.md  # Metric definitions and validator differences
 ```
 
-## A short walkthrough
+## Tech stack
 
-Run the weak-profile demo, show a structural failure repaired by a retry, then show a schema-valid response with an incorrect value. This is the project's clearest example of why validation and evaluation need separate checks.
+**Python** · **Pydantic v2** · **Guardrails AI** · **Streamlit** · **LiteLLM** (optional) · **pytest** · **GitHub Actions**
+
+## License
+
+Released under the [MIT License](LICENSE).
